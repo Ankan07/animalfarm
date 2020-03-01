@@ -78,11 +78,11 @@ def handle_request_two():
     exception = False
     exception_parameter = ""
     for i in range(len(required_variables)):
-        if required_variables[i] in batch_json:
+        if required_variables[i] in input_params:
             print("present")
         else:
             exception = True
-            exception_parameter = batch_required_variables[i]
+            exception_parameter = required_variables[i]
             break
     #print("exception parameter is ",exception_parameter)
     if exception == True:
@@ -120,7 +120,7 @@ def handle_request_two():
                db.batch.update_one({"_id": ObjectId(batch_id)},{'$set':{type_box:insert_market_selection.inserted_id,"count":new_count}}) #insert the id into corresponding batch box and update count
                db.colony.update_one({"_id":ObjectId(colony_id)},{'$push': {"ms": insert_market_selection.inserted_id}}) # update ms array in colony id
 
-        else if batch_object[box_type]==scanned_id: #box is not empty (partial weaning)
+        if batch_object[box_type]==scanned_id: #box is not empty (partial weaning)
                market_selection_box_existing = db.market_selection.find_one({"_id":ObjectId(scanned_id)}) #get existing box
                
                new_count=market_selection_box_existing["count"]+count -input_params["count"]
@@ -129,6 +129,50 @@ def handle_request_two():
                db.market_selection.update({"_id": ObjectId(scanned_id)},{'$set':market_selection_object}) #update the market_selection_box
              
               
+@app.route('/v1/reportdeath',methods=['POST'])
+def handle_request_three():
+    input_params = request.get_json()
+    type_box=input_params["type"]
+    box_id=input_params["id"]
+    no_death=input_params["count"]
+
+
+
+    if type_box=="market_selection":
+
+        current=db.market_selection.find_one({"_id": ObjectId(box_id)})
+
+        count=current["count"]
+        if count-no_death<0:
+            return "error"
+        else:
+            db.market_selection.update({"_id": ObjectId(box_id)},{'$set':{"count":count-no_death}})
+            return "updated"
+
+    if type_box=="breeder":
+
+        current=db.breeder.find_one({"_id": ObjectId(box_id)})
+
+        count=current["ndames"]
+        if count-no_death<0:
+            return "error"
+        else:
+            db.breeder.update({"_id": ObjectId(box_id)},{'$set':{"ndames":count-no_death}})
+            return "updated"
+    
+    if type_box=="batch":
+
+        current=db.breeder.find_one({"_id": ObjectId(box_id)})
+
+        count=current["count"]
+        if count-no_death<0:
+            return "error"
+        else:
+            db.batch.update({"_id": ObjectId(box_id)},{'$set':{"count":count-no_death}})
+            return "updated"
+
+
+
 
 
 if __name__ == '__main__':
