@@ -5,9 +5,10 @@ from flask.json import JSONEncoder
 from bson import json_util
 from bson.objectid import ObjectId
 from datetime import datetime, timedelta
-from http_error import InvalidUsage
+from http_error import invalidUsage
 from pymongo import MongoClient
 from pprint import pprint
+from bson.json_util import dumps
 
 class CustomJSONEncoder(JSONEncoder):
     def default(self, obj): return json_util.default(obj)
@@ -22,20 +23,57 @@ db = client.animalfarm
 
 @app.route('/')
 def hello_world():
-    x = db.colony.find_one({"_id": ObjectId("5e517bd0443f2e2dd4d69bbb")})
-    # y = db.colony.insert_one({"dummy": "data"})
-    # print("y is ", y.inserted_id)
-    return x
+    x = db.meta.find({})
+    return dumps(x)
 
+@app.route('/getColony', methods=['GET'])
+def getColony():
+    res = db.colony.find({})
+    cols = []
+    if res is None:
+        return {'message': 'nothing found!'}
+    for d in res:
+        cols.append(d)
+    return dumps(cols)
+
+@app.route('/getBreeder', methods=['GET'])
+def getBreeders():
+    res = db.breeder.find({})
+    cols = []
+    if res is None:
+        return {'message': 'nothing found!'}
+    for d in res:
+        cols.append(d)
+    return dumps(cols)
+
+@app.route('/getBatch', methods=['GET'])
+def getBatch():
+    res = db.batch.find({})
+    cols = []
+    if res is None:
+        return {'message': 'nothing found!'}
+    for d in res:
+        cols.append(d)
+    return dumps(cols)
+
+@app.route('/getMS', methods=['GET'])
+def getMS():
+    res = db.market_selection.find({})
+    cols = []
+    if res is None:
+        return {'message': 'nothing found!'}
+    for d in res:
+        cols.append(d)
+    return dumps(cols)
 
 @app.route('/v1/reportBirth', methods=['POST'])
 def handle_request():
     batch_json = request.get_json()
-    batch_required_variables = ["dob",  "colonyId", "breed", "neocount", "breeder_id"]
+    batch_required_variables = ["dob",  "colonyId", "breed", "neocount", "breederId"]
     
     for x in batch_required_variables:
         if x not in batch_json:
-            return InvalidUsage('Missing field: ' + x, 400)
+            return invalidUsage('Missing field: ' + x, 400).to_dict()
     
     
     # adding parameters to batch
@@ -43,6 +81,7 @@ def handle_request():
     batch_json["status"] = "neo"
     batch_json["dow"] = datetime.now() + timedelta(days=21)
     batch_json["count"] = batch_json["neocount"]
+
     
     batch_object = db.batch.insert_one(batch_json)
 
@@ -57,25 +96,25 @@ def handle_request():
     task_object = db.task.insert_one(task_json)
 
     upres = db.breeder.update({
-        "_id": ObjectId(batch_json["breeder_id"])
+        "_id": (batch_json["breederId"])
     }, {
         '$push': {
-            'batches': batch_object.inserted_id,
+            'batches': str(batch_object.inserted_id),
             'neonates': {
-                'id': batch_object.inserted_id,
+                'batchId': str(batch_object.inserted_id),
                 'dob': batch_json['dob']
             }
         }
     })
 
-    return {'status': 'true'} if (upres['acknowledged'] == True) else {'status': 'false'}
+    return {'status': 'true'} if (upres['updatedExisting'] == True) else {'status': 'false'}
 
 @app.route('/v1/getContainerDetails', methods=['POST'])
 def getDataFromQRCode():
     input = request.get_json()
     for x in ['type', 'id']:
         if x not in input:
-            return InvalidUsage(x + ' not found', 400)
+            return invalidUsage(x + ' not found', 400)
 
     map = {
         'B' : 'breeder',
@@ -84,32 +123,94 @@ def getDataFromQRCode():
         'R' : 'undefined' # TODO this is still left, do something about it
     }
     if input['type'] not in map.keys():
-        return InvalidUsage('unrecognized type: ' + input['type'], 400)
+        return invalidUsage('unrecognized type: ' + input['type'], 400)
     
-    res = db[map[input['type']]].find_one({'_id': ObjectId(input['id'])})
+    res = db[map[input['type']]].find_one({'_id': (input['id'])})
     if res == None:
-        return InvalidUsage('No container found with given ID', 404)
+        return invalidUsage('No container found with given ID', 404)
     return res
 
 @app.route('/v1/getWeaningData', methods=['POST'])
 def getWeaningData():
     input = request.get_json()
     if 'id' not in input:
-        return InvalidUsage('id not found!', 400)
+        return invalidUsage('id not found!', 400)
     batchId = input['id']
 
     data = {}
     res = db.batch.find_one({'_id': ObjectId(batchId)})
+    if res is None:
+        return invalidUsage('invalid batch', 403)
     keys = ['mmboxId', 'mfboxId', 'smboxId', 'sfboxId']
+    #print(res)
     for k in keys:
         if k not in res:
+            #print(k + ' not in res')
             data[k] = 0
         else:
-            smbox = db.market_selection.find_one({'_id': ObjectId(k)})
+            #print('trying to get ' + k)
+            smbox = db.market_selection.find_one({'_id': (res[k])})
+            if smbox is None:
+                return invalidUsage('selection/male box is none for: ' + res[k], 500)
             data[k] = smbox['count']
     
     return data
 
+
+@app.route('/v1/addWeaningData', methods=['POST'])
+def addWeaningData():
+    input_params = request.get_json()
+    reqParams = ['weight', 'type', 'containerId', 'batchId']
+    for x in reqParams:
+        if x not in input_params:
+            return invalidUsage('Missing field: ' + x, 400)
+    
+    # add data to batch
+    # create a market_selection document with containerId
+    res = db.batch.update_one({'_id': ObjectId(input_params['batchId'])}, {'$set': {
+        input_params['type']: input_params['containerId']
+    }})
+
+    if res is None:
+        return invalidUsage('something seriously went wrong', 500)
+    # #print(res['raw_result'])
+    res = db.batch.find_one({'_id': ObjectId(input_params['batchId'])})
+    if res is None:
+        return invalidUsage('batch not found, what on earth is happening?', 500)
+    res = db.market_selection.update_one({'_id': input_params['containerId']},
+    {
+        '$set': {
+        'batchId': input_params['batchId'],
+        'colonyId': res['colonyId'],
+        'gender': input_params['type'][1],
+        'count': len(input_params['weight']),
+        'dob': res['dob'],
+        'dow': str(datetime.now()),
+        'weight': [x['value'] for x in input_params['weight']],
+        'weight_taken_at': str(datetime.now())
+    }}, upsert=True)
+
+    if res is None:
+        return invalidUsage('failed to write to database', 500)
+    
+    return {'status': True}
+
+@app.route('/v1/completeWeaning', methods=['POST'])
+def completeWeaning():
+    input_params = request.get_json()
+    reqparams = ['breederId', 'batchId']
+    for x in reqparams:
+        if x not in input_params:
+            return invalidUsage('Missing field: ' + x, 400)
+    res = db.breeder.update_one({'_id': input_params['breederId']}, {
+        '$pull': {
+            'neonates': {'batchId':input_params['batchId']}
+        }
+    })
+    if res is None:
+        return invalidUsage('writing to database failed', 500)
+    #print(res.raw_result)
+    return {'status': True}
 
 @app.route('/v1/verifyContainer', methods=['POST'])
 def verifyContainer():
@@ -117,11 +218,11 @@ def verifyContainer():
     reqParams = ['batchId', 'colonyId', 'boxType', 'qr']
     for x in reqParams:
         if x not in input_params:
-            return InvalidUsage('Missing field: ' + x, 400)
+            return invalidUsage('Missing field: ' + x, 400)
     
     for x in ['id', 'type']:
         if x not in input_params['qr']:
-            return InvalidUsage('Missing field: ' + x, 400)
+            return invalidUsage('Missing field: ' + x, 400)
     qr = input_params['qr']
     # if this box was previously partial weaned, then match previous id with current id
     # if not previously weaned, then check if this box is used somewhere else
@@ -148,9 +249,10 @@ def verifyContainer():
                 # same box, return existing list
                 msbox = db.market_selection.find_one({'_id': res[input_params['boxType']]})
                 if msbox == None:
-                    return InvalidUsage('The programmer messed it up, God bless him', 500)
-                return {'isValid':True, 'weight': msbox.weight}
-    
+                    return invalidUsage('The programmer messed it up, God bless him', 500)
+                return {'isValid':True, 'weight': msbox['weight']}
+            else:
+                return {'isValid': False}
     # find if this box is used anywhere else
     res = db.market_selection.find_one({'_id': qr['id']})
     if res == None:
@@ -160,58 +262,7 @@ def verifyContainer():
     # For every other condition, these boxes ain't loyal
     return {'isValid': False}
 
-@app.route('/v1/addweaningdata', methods=['POST'])
-def handle_request_two():
-    input_params = request.get_json()
-    print(input_params)
-
-    required_variables = ["dob", "dow", "colonyId", "batchId", "gender",
-                          "count", "weight", "wt_taken_at", "breed", "cname", "type", "scanned_id"]
-    
-    for x in required_variables:
-        if x not in input_params:
-            return InvalidUsage('Missing field: ' + x, 400)
-
-    # verify market details
-    # type should be any one of sfboxid,smboxid,mmboxid,mfboxid
-    box_type = input_params["box_type"]
-    scanned_id = input_params["scanned_id"]
-    batch_id = input_params["batch_id"]
-    type_box=input_params["type"]
-    colony_id=input_params["colony_id"]
-
-    market_selection_object = {
-        "batch_id": input_params["batch_id"],
-        "colony_id": input_params["colony_id"],
-        "gender": input_params["gender"],
-        "count": input_params["count"],
-        "dob": input_params["dob"],
-        "dow": input_params["dow"],
-        "weight": input_params["weight"],
-        "wt_taken_at": input_params["wt_taken_at"],
-        "breed": input_params["breed"],
-        "cname": input_params["cname"],
-        "type": input_params["type"]
-    }
-
-    batch_object = db.batch.find_one({"_id": ObjectId(batch_id)})
-    count=batch_object[count]# batch object current count
-    if batch_object[box_type] == "": # check if box_type in batch is empty
-        if db.market_selection.find({"_id": ObjectId(scanned_id)}).count() == 0: #check if market/selection box is not created
-            insert_market_selection = db.market_selection.insert_one(market_selection_object) #insert a new m/s box
-            new_count=count-input_params["count"] # update count value
-            db.batch.update_one({"_id": ObjectId(batch_id)},{'$set':{type_box:insert_market_selection.inserted_id,"count":new_count}}) #insert the id into corresponding batch box and update count
-            db.colony.update_one({"_id":ObjectId(colony_id)},{'$push': {"ms": insert_market_selection.inserted_id}}) # update ms array in colony id
-
-    if batch_object[box_type]==scanned_id: #box is not empty (partial weaning)
-        market_selection_box_existing = db.market_selection.find_one({"_id":ObjectId(scanned_id)}) #get existing box
-        
-        new_count=market_selection_box_existing["count"]+count -input_params["count"]
-        db.batch.update_one({"_id": ObjectId(batch_id)},{'$set':{"count":new_count}}) #update count in batch object
-
-        db.market_selection.update({"_id": ObjectId(scanned_id)},{'$set':market_selection_object}) #update the market_selection_box
-             
-              
+            
 @app.route('/v1/reportDeath',methods=['POST'])
 def handle_request_three():
     input_params = request.get_json()
@@ -219,7 +270,7 @@ def handle_request_three():
     reqparams = ['type', 'id', 'count']
     for x in reqparams:
         if x not in input_params:
-            return InvalidUsage('Missing field: ' + x, 400)
+            return invalidUsage('Missing field: ' + x, 400)
 
     type_box = input_params["type"]
     box_id = input_params["id"]
@@ -230,17 +281,17 @@ def handle_request_three():
 
     if type_box == "market_selection":
 
-        current = db.market_selection.find_one({"_id": ObjectId(box_id)})
+        current = db.market_selection.find_one({"_id": (box_id)})
         
         if current == None:
-            return InvalidUsage('Invalid box scanned', 400)
+            return invalidUsage('Invalid box scanned', 400)
 
         count = current["count"]
         if count - no_death < 0:
-            return InvalidUsage('No of dead is more than total occupancy', 400)
+            return invalidUsage('No of dead is more than total occupancy', 400)
         else:
             db.market_selection.update({
-                "_id": ObjectId(box_id)
+                "_id": (box_id)
             }, {
                 '$set': {
                     "count": count - no_death
@@ -251,22 +302,22 @@ def handle_request_three():
     if type_box == "breeder":
 
         if 'death_type' not in input_params:
-            return InvalidUsage('Missing field: death_type', 400)
+            return invalidUsage('Missing field: death_type', 400)
         dtype = input_params['death_type']
 
-        current = db.breeder.find_one({"_id": ObjectId(box_id)})
+        current = db.breeder.find_one({"_id": (box_id)})
 
         if current == None:
-            return InvalidUsage('Invalid box scanned', 400)
+            return invalidUsage('Invalid box scanned', 400)
 
         if dtype == 'dame':
 
             count = current["ndames"]
             if count - no_death < 0:
-                return InvalidUsage('Reported death of dames exceed the total count of dames', 400)
+                return invalidUsage('Reported death of dames exceed the total count of dames', 400)
             else:
                 db.breeder.update({
-                    "_id": ObjectId(box_id)
+                    "_id": (box_id)
                 }, {
                     '$set': {
                         "ndames": count - no_death
@@ -278,15 +329,15 @@ def handle_request_three():
 
             # for neo, the batch_id should be sent too
             if 'batch_id' not in input_params:
-                return InvalidUsage('Missing field: batch_id', 400)
+                return invalidUsage('Missing field: batch_id', 400)
 
             current = db.batch.find_one({"_id": ObjectId(input_params['batch_id'])})
             if current == None:
-                return InvalidUsage('Invalid batch selected', 400)
+                return invalidUsage('Invalid batch selected', 400)
 
             count = current["count"]
             if count - no_death < 0:
-                return InvalidUsage('Reported death of neonates is larger than total count', 400)
+                return invalidUsage('Reported death of neonates is larger than total count', 400)
             else:
                 db.batch.update({
                     "_id": ObjectId(input_params['batch_id'])

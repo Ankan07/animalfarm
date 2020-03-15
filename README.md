@@ -1,6 +1,6 @@
 to create virtual environment for python
 1. pip3 install virtualenv
-2. virtualenv py38 -p python3.8
+2. virtualenv py38 -p python3.8 (or whatever u have)
 
 whenever you want to work here, activate the virtual env (create it for the first time)
 source py38/bin/activate

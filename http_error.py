@@ -14,3 +14,6 @@ class InvalidUsage(Exception):
         rv = dict(self.payload or ())
         rv['message'] = self.message
         return rv
+
+def invalidUsage(message, status):
+    return InvalidUsage(message, status).to_dict()
