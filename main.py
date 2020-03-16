@@ -366,7 +366,7 @@ def verifyIdentity():
         if qr['type'] == 'B':
             res = db.breeder.find_one({'_id': body['id']})
             if res is None:
-                return {'isValid': True, 'data': res['_id']}
+                return {'isValid': True}
             else:
                 return {'isValid': False, 'message': 'breeder already attached to colony'}
         
