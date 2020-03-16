@@ -348,7 +348,7 @@ def handle_request_three():
                 })
                 return {'status': 'true'}
 
-@app.route('/v1/createcolony',methods=['POST'])
+@app.route('/v1/createColony',methods=['POST'])
 def handle_create_colony():
     input_params = request.get_json()
     reqparams = ['sireId', 'breeder_ids','sire_batchId','sire_colonyId','colonyname']
@@ -404,6 +404,7 @@ def handle_create_colony():
     colony["ms"]=[]
     colony["rest"]=False
     colony["breed"]=sire_details["breed"]
+    colony["_id"]:colonyId
  
     db.colony.insert_one(colony)
 
