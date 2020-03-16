@@ -404,6 +404,7 @@ def handle_create_colony():
     colony["ms"]=[]
     colony["rest"]=False
     colony["breed"]=sire_details["breed"]
+    colony["_id"]:colonyId
  
     db.colony.insert_one(colony)
 
