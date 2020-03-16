@@ -349,9 +349,57 @@ def handle_request_three():
                 return {'status': 'true'}
 
 
+@app.route('/v1/verifyIdentity', methods=['POST'])
+def verifyIdentity():
+    body = request.get_json()
+    reqParams = ['verifyType', 'id', 'type']
+    for x in reqParams:
+        if x not in body:
+            return invalidUsage('missing field ' + x, 400)
+    
+    qr = {
+        'id': body['id'],
+        'type': body['type']
+    }
 
-
+    if body['verifyType'] == 'breeder':
+        if qr['type'] == 'B':
+            res = db.breeder.find_one({'_id': body['id']})
+            if res is None:
+                return {'isValid': True, 'data': res['_id']}
+            else:
+                return {'isValid': False, 'message': 'breeder already attached to colony'}
+        
+    elif body['verifyType'] == 'dame' or body['verifyType'] == 'sire':
+        
+        if qr['type'] == 'Q' or qr['type'] == 'S':
+            
+            if qr['id'] == 'Q0000':
+                # this is universal sink quarantine for preexisting animals
+                return {'isValid': True, 'data': {
+                    'colonyId': 'C0000',
+                    'batchId': 'bt0000'
+                }}
+            
+            # check for quarantine/selection box from market_selection
+            res = db.market_selection.find_one({'_id': qr['id']})
+            if res is None:
+                return {'isValid': False, 'message': 'selection doc not found'}
+            else:
+                gender = 'm' if body['verifyType'] == 'sire' else 'f'
+                if res['gender'] != gender:
+                    return {'isValid': False, 'message': 'gender mismatch'}
+                return {'isValid': True, 'data': {
+                    'colonyId': res['colonyId'],
+                    'batchId': res['batchId']
+                }}
+    elif body['verifyType'] == 'rest':
+        if qr['type'] == 'R':
+            res = db.rest.find_one({'_id': qr['id']})
+            if res is None:
+                return {'isValid': True}
+    return {'isValid': False, 'message': 'base case'}
 
 if __name__ == '__main__':
 
-    app.run()
+    app.run('0.0.0.0', port=5000)
