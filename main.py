@@ -199,16 +199,19 @@ def addWeaningData():
 def completeWeaning():
     input_params = request.get_json()
     reqparams = ['breederId', 'batchId']
+    print('im here on complete weaning')
     for x in reqparams:
         if x not in input_params:
+            print('invalid usage ' + x)
             return invalidUsage('Missing field: ' + x, 400)
     res = db.breeder.update_one({'_id': input_params['breederId']}, {
         '$pull': {
             'neonates': {'batchId':input_params['batchId']}
         }
     })
+    print(res.raw_result)
     if res is None:
-        return invalidUsage('writing to database failed', 500)
+        return invalidUsage('writing to database failed', 400)
     #print(res.raw_result)
     return {'status': True}
 
@@ -351,10 +354,11 @@ def handle_request_three():
 @app.route('/v1/createColony',methods=['POST'])
 def handle_create_colony():
     input_params = request.get_json()
-    reqparams = ['sireId', 'breeder_ids','sire_batchId','sire_colonyId','colonyname']
+    reqparams = ['breed', 'breeder_ids','sire_batchId','sire_colonyId','colonyname']
     for x in reqparams:
         if x not in input_params:
             return invalidUsage('Missing field: ' + x, 400)
+
 
     #define the colony_object
     colony={}
@@ -367,7 +371,7 @@ def handle_create_colony():
     colonyId='C'+str(count)
     colonyname=input_params['colonyname']
     #fetch selection_box_sire_details step 1
-    sire_details=db.market_selection.find_one({"_id": input_params['sireId']})
+    # sire_details=db.market_selection.find_one({"_id": input_params['sireId']})
 
     sire_batchId=input_params['sire_batchId']
     sire_colonyId=input_params['sire_colonyId']
@@ -378,10 +382,6 @@ def handle_create_colony():
         breeder_object={}
         temp=breeder_ids[i]
         breederId=temp["breederId"]
-
-
-
-       
         breeder_object["dames"]=temp["dames"]
         breeder_object["ndames"]=len(breeder_object["dames"])
         breeder_object["neonates"]=[]
@@ -390,7 +390,7 @@ def handle_create_colony():
         breeder_object["colonyId"]=colonyId
         breeder_object["cName"]=colonyname
    
-        breeder_object["breed"]=sire_details["breed"]
+        breeder_object["breed"]=input_params["breed"]
         db.breeder.insert_one(breeder_object)
     
     #insering colony object
@@ -401,11 +401,18 @@ def handle_create_colony():
     colony["sire"]=sire
     colony["generation"]=0
     colony["breeders"]=[x['breederId'] for x in breeder_ids]
-    colony["ms"]=[]
-    colony["rest"]=False
-    colony["breed"]=sire_details["breed"]
-    colony["_id"]:colonyId
+    colony["ms"] = []
+    colony["rest"] = False
+    colony["breed"] = input_params["breed"]
+    colony["_id"] = colonyId
+    colony['restboxId'] = input_params['restboxId']
  
+    db.rest.insert_one({'_id': input_params['restboxId'], 'colonyId': colonyId})
+    count = 0
+    for x in breeder_ids:
+        count += len(breeder_ids['dames'])
+    colony['type'] = 'HAREM' if count > 1 else 'INDIVIDUAL'
+    
     db.colony.insert_one(colony)
 
     return {'status':"success"}
@@ -472,3 +479,4 @@ def verifyIdentity():
 if __name__ == '__main__':
 
     app.run('0.0.0.0', port=5000)
+    # app.run()
