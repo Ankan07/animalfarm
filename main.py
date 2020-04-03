@@ -9,6 +9,7 @@ from http_error import invalidUsage
 from pymongo import MongoClient
 from pprint import pprint
 from bson.json_util import dumps
+from passlib.hash import sha256_crypt
 
 class CustomJSONEncoder(JSONEncoder):
     def default(self, obj): return json_util.default(obj)
@@ -354,7 +355,7 @@ def handle_request_three():
 @app.route('/v1/createColony',methods=['POST'])
 def handle_create_colony():
     input_params = request.get_json()
-    reqparams = ['breed', 'breeder_ids','sire_batchId','sire_colonyId','colonyname']
+    reqparams = ['restboxId','breed', 'breeder_ids','sire_batchId','sire_colonyId','colonyname']
     for x in reqparams:
         if x not in input_params:
             return invalidUsage('Missing field: ' + x, 400)
@@ -410,7 +411,7 @@ def handle_create_colony():
     db.rest.insert_one({'_id': input_params['restboxId'], 'colonyId': colonyId})
     count = 0
     for x in breeder_ids:
-        count += len(breeder_ids['dames'])
+        count += len(x['dames'])
     colony['type'] = 'HAREM' if count > 1 else 'INDIVIDUAL'
     
     db.colony.insert_one(colony)
@@ -418,8 +419,47 @@ def handle_create_colony():
     return {'status':"success"}
 
 
+@app.route('/v1/signup',methods=['POST'])
+def handlesignup():
+    input_params = request.get_json()
+    print(input_params['email'])
+    reqparams = ['email','password']
+    for x in reqparams:
+        if x not in input_params:
+            return invalidUsage('Missing field: ' + x, 400)
+  
+    res=db.users.find_one({"email":input_params['email']})
+    if res is None:
+        password = sha256_crypt.hash(input_params['password'])
+        db.users.insert_one({"email":input_params['email'],"password":password})
+        return {"status":"success","message":"sigunp complete"}
+    else:
+        return{"status":"failure","message":"user already exist"}
+@app.route('/v1/login',methods=['POST'])
+def handlelogin():
+    input_params = request.get_json()
+    print(input_params['email'])
+    reqparams = ['email','password']
+    for x in reqparams:
+        if x not in input_params:
+            return invalidUsage('Missing field: ' + x, 400)
+  
+    res=db.users.find_one({"email":input_params['email']})
+    if res is None:
+    
+   
+        return {"status":"failure","message":"user does not exist"}
+    else:
+            password = res['password']
+            print("password is ",password," ",res)
+            if sha256_crypt.verify(input_params['password'], password)==True:
+                return{"status":"success","message":"login succesful"}
+            else:
+                return{"status":"failure","message":"invalid credentials"}
+
 
    
+  
     
 
 
@@ -478,5 +518,5 @@ def verifyIdentity():
 
 if __name__ == '__main__':
 
-    app.run('0.0.0.0', port=5000)
-    # app.run()
+    # app.run('0.0.0.0', port=5000)
+    app.run()
