@@ -9,6 +9,7 @@ from http_error import invalidUsage
 from pymongo import MongoClient
 from pprint import pprint
 from bson.json_util import dumps
+from passlib.hash import sha256_crypt
 
 import weaning
 import trivial_display
@@ -120,5 +121,5 @@ def verifyIdentity():
 
 if __name__ == '__main__':
 
-    app.run('0.0.0.0', port=5000)
-    # app.run()
+    # app.run('0.0.0.0', port=5000)
+    app.run()
